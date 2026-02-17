@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: prod
+resources:
+  - ../../base
+images:
+  - name: <AWS_ACCOUNT_ID>.dkr.ecr.eu-west-2.amazonaws.com/counter-backend
+    newTag: sha-REPLACE
+  - name: <AWS_ACCOUNT_ID>.dkr.ecr.eu-west-2.amazonaws.com/counter-frontend
+    newTag: sha-REPLACE
+patches:
+  - target:
+      kind: Deployment
+      name: backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+  - target:
+      kind: Deployment
+      name: frontend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
