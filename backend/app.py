@@ -93,14 +93,26 @@ if OTEL_ENABLED:
 def init_db() -> None:
     try:
         with engine.begin() as conn:
-            conn.execute(
+            # Use information_schema check instead of CREATE TABLE IF NOT EXISTS
+            # to avoid UniqueViolation on pg_type when an orphaned type exists
+            # from a previous failed transaction.
+            table_exists = conn.execute(
                 text(
-                    """
-                    CREATE TABLE IF NOT EXISTS request_counter_state (
-                        id INTEGER PRIMARY KEY,
-                        value BIGINT NOT NULL DEFAULT 0
-                    );
-                    """
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_name = 'request_counter_state')"
+                )
+            ).scalar()
+            if not table_exists:
+                conn.execute(
+                    text(
+                        """
+                        DROP TYPE IF EXISTS request_counter_state;
+                        CREATE TABLE request_counter_state (
+                            id INTEGER PRIMARY KEY,
+                            value BIGINT NOT NULL DEFAULT 0
+                        );
+                        """
+                    )
                 )
             )
             conn.execute(
