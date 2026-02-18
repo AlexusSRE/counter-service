@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: 714000371621.dkr.ecr.eu-west-2.amazonaws.com/counter-frontend:sha-REPLACE
+          image: 630943284793.dkr.ecr.eu-west-2.amazonaws.com/counter-frontend:sha-3d81d6a6bd07a08c9d476edbfae5784a9af02cff
           ports:
             - containerPort: 80
           resources:

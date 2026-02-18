@@ -20,7 +20,7 @@ spec:
       serviceAccountName: backend
       containers:
         - name: backend
-          image: 714000371621.dkr.ecr.eu-west-2.amazonaws.com/counter-backend:sha-REPLACE
+          image: 630943284793.dkr.ecr.eu-west-2.amazonaws.com/counter-backend:sha-3d81d6a6bd07a08c9d476edbfae5784a9af02cff
           ports:
             - containerPort: 8080
           envFrom:

@@ -4,10 +4,10 @@ namespace: prod
 resources:
   - ../../base
 images:
-  - name: 714000371621.dkr.ecr.eu-west-2.amazonaws.com/counter-backend
-    newTag: sha-789981c86d12bf2b74d7a71bbea2781525c1880a
-  - name: 714000371621.dkr.ecr.eu-west-2.amazonaws.com/counter-frontend
-    newTag: sha-789981c86d12bf2b74d7a71bbea2781525c1880a
+  - name: 630943284793.dkr.ecr.eu-west-2.amazonaws.com/counter-backend
+    newTag: sha-3d81d6a6bd07a08c9d476edbfae5784a9af02cff
+  - name: 630943284793.dkr.ecr.eu-west-2.amazonaws.com/counter-frontend
+    newTag: sha-3d81d6a6bd07a08c9d476edbfae5784a9af02cff
 patches:    
   - target:
       kind: Deployment
