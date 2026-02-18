@@ -128,3 +128,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 terraform/terraform.tfvars
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/.terraform/
+terraform/.terraform.tfstate.lock.info
+terraform/crash.log
