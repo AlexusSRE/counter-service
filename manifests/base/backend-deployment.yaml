@@ -24,13 +24,13 @@ spec:
           ports:
             - containerPort: 8080
           envFrom:
+            - configMapRef:
+                name: backend-config
             - secretRef:
                 name: backend-db
           env:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://adot-collector.prod.svc.cluster.local:4318"
-            - name: OTEL_SERVICE_NAME
-              value: "counter-backend"
           resources:
             requests:
               cpu: 100m

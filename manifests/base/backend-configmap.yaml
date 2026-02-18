@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: prod
+data:
+  DB_HOST: "alex-counter-service-postgres.c360efet38pa.eu-west-2.rds.amazonaws.com"
+  DB_PORT: "5432"
+  DB_NAME: "counter"
+  DB_USER: "counter"
+  OTEL_SERVICE_NAME: "counter-backend"
+  OTEL_ENV: "prod"
+  OTEL_ENABLED: "false"
