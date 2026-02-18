@@ -2,9 +2,8 @@ name: release
 
 on:
   push:
-    branches: ["main", "codex/implement-aws-eks-gitops-microservice-with-finops"]
+    branches: ["main","codex/implement-aws-eks-gitops-microservice-with-finops"]
   workflow_dispatch:
-
 permissions:
   id-token: write
   contents: write
@@ -14,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AWS_REGION: eu-west-2
-      AWS_ACCOUNT_ID: 714000371621
+      AWS_ACCOUNT_ID: 630943284793
       BACKEND_REPO: counter-backend
       FRONTEND_REPO: counter-frontend
     steps:
@@ -29,7 +28,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::714000371621:role/counter-service-github-actions-role
+          role-to-assume: arn:aws:iam::630943284793:role/alex-counter-service-github-actions-role
           aws-region: ${{ env.AWS_REGION }}
 
       - uses: aws-actions/amazon-ecr-login@v2
