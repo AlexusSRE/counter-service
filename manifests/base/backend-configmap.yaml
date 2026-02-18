@@ -11,3 +11,4 @@ data:
   OTEL_SERVICE_NAME: "counter-backend"
   OTEL_ENV: "prod"
   OTEL_ENABLED: "false"
+  FRONTEND_URL: "http://k8s-prod-counters-962591410f-1791204388.eu-west-2.elb.amazonaws.com"
