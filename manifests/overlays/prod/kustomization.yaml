@@ -8,18 +8,3 @@ images:
     newTag: sha-3d81d6a6bd07a08c9d476edbfae5784a9af02cff
   - name: 630943284793.dkr.ecr.eu-west-2.amazonaws.com/counter-frontend
     newTag: sha-3d81d6a6bd07a08c9d476edbfae5784a9af02cff
-patches:    
-  - target:
-      kind: Deployment
-      name: backend
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 2
-  - target:
-      kind: Deployment
-      name: frontend
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 2
