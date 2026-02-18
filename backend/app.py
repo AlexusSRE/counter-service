@@ -5,14 +5,26 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
-from opentelemetry import trace
-from opentelemetry.instrumentation.flask import FlaskInstrumentor
-from opentelemetry.instrumentation.requests import RequestsInstrumentor
-from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+try:
+    from opentelemetry import trace
+    from opentelemetry.instrumentation.flask import FlaskInstrumentor
+    from opentelemetry.instrumentation.requests import RequestsInstrumentor
+    from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+    OTEL_ENABLED = True
+except Exception:
+    # If OpenTelemetry or its transitive dependencies (e.g. pkg_resources)
+    # are not available, run the service without tracing instead of crashing.
+    OTEL_ENABLED = False
+
+# Optional explicit toggle via env. If imports failed above, this stays False.
+otel_env = os.getenv("OTEL_ENABLED")
+if otel_env is not None and OTEL_ENABLED:
+    OTEL_ENABLED = otel_env.lower() in ("1", "true", "yes", "on")
 
 app = Flask(__name__)
 
@@ -52,9 +64,13 @@ COUNTER_VALUE = Gauge("counter_value", "Current counter value")
 
 
 def setup_tracing() -> None:
+    if not OTEL_ENABLED:
+        return
+
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
     if not endpoint:
         return
+
     resource = Resource.create(
         {
             "service.name": os.getenv("OTEL_SERVICE_NAME", "counter-backend"),
@@ -67,33 +83,37 @@ def setup_tracing() -> None:
     trace.set_tracer_provider(tracer_provider)
 
 
-setup_tracing()
-FlaskInstrumentor().instrument_app(app)
-RequestsInstrumentor().instrument()
-SQLAlchemyInstrumentor().instrument(engine=engine)
+if OTEL_ENABLED:
+    setup_tracing()
+    FlaskInstrumentor().instrument_app(app)
+    RequestsInstrumentor().instrument()
+    SQLAlchemyInstrumentor().instrument(engine=engine)
 
 
 def init_db() -> None:
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS counter (
-                    id INTEGER PRIMARY KEY,
-                    value BIGINT NOT NULL DEFAULT 0
-                );
-                """
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS request_counter_state (
+                        id INTEGER PRIMARY KEY,
+                        value BIGINT NOT NULL DEFAULT 0
+                    );
+                    """
+                )
             )
-        )
-        conn.execute(
-            text(
-                """
-                INSERT INTO counter (id, value)
-                VALUES (1, 0)
-                ON CONFLICT (id) DO NOTHING;
-                """
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO request_counter_state (id, value)
+                    VALUES (1, 0)
+                    ON CONFLICT (id) DO NOTHING;
+                    """
+                )
             )
-        )
+    except SQLAlchemyError as exc:
+        print(f"DB init skipped due to error: {exc}", flush=True)
 
 
 @app.before_request
@@ -119,7 +139,9 @@ def after_request_metrics(response):
 def get_counter():
     try:
         with engine.begin() as conn:
-            value = conn.execute(text("SELECT value FROM counter WHERE id = 1")).scalar_one()
+            value = conn.execute(
+                text("SELECT value FROM request_counter_state WHERE id = 1")
+            ).scalar_one()
         COUNTER_VALUE.set(value)
         return jsonify({"value": value})
     except SQLAlchemyError as exc:
@@ -132,7 +154,7 @@ def post_counter():
         with engine.begin() as conn:
             value = conn.execute(
                 text(
-                    "UPDATE counter SET value = value + 1 WHERE id = 1 RETURNING value;"
+                    "UPDATE request_counter_state SET value = value + 1 WHERE id = 1 RETURNING value;"
                 )
             ).scalar_one()
         COUNTER_VALUE.set(value)

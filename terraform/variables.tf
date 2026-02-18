@@ -5,22 +5,22 @@ variable "region" {
 
 variable "project_name" {
   type    = string
-  default = "counter-service"
+  default = "alex-counter-service"
 }
 
 variable "cluster_name" {
   type    = string
-  default = "<CLUSTER_NAME>"
+  default = "alex-counter-service-cluster"
 }
 
 variable "github_org" {
   type    = string
-  default = "<GITHUB_ORG>"
+  default = "AlexusSRE"
 }
 
 variable "github_repo" {
   type    = string
-  default = "<REPO_NAME>"
+  default = "counter-service"
 }
 
 variable "github_branch" {
@@ -41,6 +41,10 @@ variable "db_username" {
 variable "db_password" {
   type      = string
   sensitive = true
+  validation {
+    condition     = length(var.db_password) >= 12
+    error_message = "db_password must be at least 12 characters."
+  }
 }
 
 variable "enable_rds_backups" {
@@ -48,8 +52,11 @@ variable "enable_rds_backups" {
   default = true
 }
 
-variable "frontend_lb_dns_name" {
-  type        = string
-  description = "Frontend LoadBalancer DNS name for CloudFront origin"
-  default     = ""
+variable "tags" {
+  type = map(string)
+  default = {
+    Project = "counter-service"
+    Owner   = "AlexusSRE"
+    Env     = "dev"
+  }
 }

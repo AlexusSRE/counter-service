@@ -15,10 +15,24 @@ jobs:
 
       - name: Validate backend syntax
         run: |
-          python -m py_compile app/app.py
+          python -m py_compile backend/app.py
 
-      - name: Build backend image
-        run: docker build -t backend:pr-${{ github.sha }} app
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Build frontend image
-        run: docker build -t frontend:pr-${{ github.sha }} frontend
+      - name: Build backend image (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: backend:pr-${{ github.sha }}
+
+      - name: Build frontend image (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: frontend:pr-${{ github.sha }}

@@ -9,8 +9,8 @@ spec:
     server: https://kubernetes.default.svc
     namespace: prod
   source:
-    repoURL: https://github.com/<GITHUB_ORG>/<REPO_NAME>.git
-    targetRevision: main
+    repoURL: https://github.com/AlexusSRE/counter-service
+    targetRevision: codex/implement-aws-eks-gitops-microservice-with-finops
     path: manifests/overlays/prod
   syncPolicy:
     automated:

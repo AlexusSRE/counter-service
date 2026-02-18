@@ -20,6 +20,8 @@ module "vpc" {
   enable_nat_gateway = true
   single_nat_gateway = true
 
+  tags = var.tags
+
   public_subnet_tags = {
     "kubernetes.io/role/elb" = 1
   }
@@ -31,24 +33,31 @@ module "vpc" {
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "20.20.0"
+  version = "20.31.0"
 
-  cluster_name    = var.cluster_name
-  cluster_version = "1.30"
+  cluster_name                             = var.cluster_name
+  cluster_version                          = "1.34"
+  enable_cluster_creator_admin_permissions = true
 
   cluster_endpoint_public_access = true
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
+  cluster_addons = {
+    aws-ebs-csi-driver = {}
+  }
+
   eks_managed_node_groups = {
     default = {
-      instance_types = ["t3.small"]
+      instance_types = ["t4g.small"]
       min_size       = 1
       max_size       = 2
       desired_size   = 1
     }
   }
+
+  tags = var.tags
 }
 
 resource "aws_ecr_repository" "backend" {
@@ -57,6 +66,7 @@ resource "aws_ecr_repository" "backend" {
   image_scanning_configuration {
     scan_on_push = true
   }
+  tags = var.tags
 }
 
 resource "aws_ecr_repository" "frontend" {
@@ -65,12 +75,14 @@ resource "aws_ecr_repository" "frontend" {
   image_scanning_configuration {
     scan_on_push = true
   }
+  tags = var.tags
 }
 
 resource "aws_security_group" "rds" {
   name        = "${var.project_name}-rds-sg"
   description = "Allow PostgreSQL from EKS nodes"
   vpc_id      = module.vpc.vpc_id
+  tags        = var.tags
 }
 
 resource "aws_security_group_rule" "rds_from_eks" {
@@ -94,15 +106,17 @@ resource "aws_security_group_rule" "rds_egress" {
 resource "aws_db_subnet_group" "this" {
   name       = "${var.project_name}-db-subnets"
   subnet_ids = module.vpc.private_subnets
+  tags       = var.tags
 }
 
 resource "aws_db_instance" "postgres" {
   identifier                   = "${var.project_name}-postgres"
   engine                       = "postgres"
-  engine_version               = "16.3"
+  engine_version               = "16.12"
   instance_class               = "db.t4g.micro"
   allocated_storage            = 20
-  max_allocated_storage        = 100
+  storage_type                 = "gp3"
+  max_allocated_storage        = 30
   db_name                      = var.db_name
   username                     = var.db_username
   password                     = var.db_password
@@ -115,12 +129,17 @@ resource "aws_db_instance" "postgres" {
   deletion_protection          = false
   multi_az                     = false
   performance_insights_enabled = false
+  tags                         = var.tags
+}
+
+data "tls_certificate" "github" {
+  url = "https://token.actions.githubusercontent.com"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+  thumbprint_list = [data.tls_certificate.github.certificates[0].sha1_fingerprint]
 }
 
 data "aws_iam_policy_document" "github_assume_role" {
@@ -194,61 +213,4 @@ resource "aws_iam_role" "adot_collector" {
 resource "aws_iam_role_policy_attachment" "adot_xray" {
   role       = aws_iam_role.adot_collector.name
   policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
-}
-
-resource "aws_cloudfront_distribution" "frontend" {
-  enabled = true
-
-  origin {
-    domain_name = var.frontend_lb_dns_name
-    origin_id   = "frontend-lb"
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "http-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-    }
-  }
-
-  default_cache_behavior {
-    target_origin_id       = "frontend-lb"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-    cached_methods         = ["GET", "HEAD", "OPTIONS"]
-    compress               = true
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
-      }
-    }
-  }
-
-  ordered_cache_behavior {
-    path_pattern           = "/api/*"
-    target_origin_id       = "frontend-lb"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
-    cached_methods         = ["GET", "HEAD"]
-    min_ttl                = 0
-    default_ttl            = 0
-    max_ttl                = 0
-    forwarded_values {
-      query_string = true
-      headers      = ["*"]
-      cookies {
-        forward = "all"
-      }
-    }
-  }
-
-  restrictions {
-    geo_restriction {
-      restriction_type = "none"
-    }
-  }
-
-  viewer_certificate {
-    cloudfront_default_certificate = true
-  }
 }

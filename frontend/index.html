@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.png" type="image/png" />
     <title>Counter Service</title>
     <style>
       body { font-family: Arial, sans-serif; background: #f7fafc; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
@@ -51,6 +52,7 @@
       });
 
       refresh();
+      setInterval(refresh, 1000);
     </script>
   </body>
 </html>
