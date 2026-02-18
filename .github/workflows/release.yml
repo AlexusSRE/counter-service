@@ -2,7 +2,7 @@ name: release
 
 on:
   push:
-    branches: ["main","codex/implement-aws-eks-gitops-microservice-with-finops"]
+    branches: ["main"]
   workflow_dispatch:
 permissions:
   id-token: write
