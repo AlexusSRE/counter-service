@@ -3,7 +3,7 @@ output "region" {
 }
 
 output "cluster_name" {
-  value = module.eks.cluster_name
+  value = data.aws_eks_cluster.this.name
 }
 
 output "backend_ecr_repository_url" {
@@ -26,6 +26,6 @@ output "adot_irsa_role_arn" {
   value = aws_iam_role.adot_collector.arn
 }
 
-output "cloudfront_domain_name" {
-  value = aws_cloudfront_distribution.frontend.domain_name
+output "alb_controller_role_arn" {
+  value = aws_iam_role.alb_controller.arn
 }

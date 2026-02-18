@@ -10,7 +10,7 @@ variable "project_name" {
 
 variable "cluster_name" {
   type    = string
-  default = "alex-counter-service-cluster"
+  default = "alex-counter-service"
 }
 
 variable "github_org" {
@@ -45,6 +45,12 @@ variable "db_password" {
     condition     = length(var.db_password) >= 12
     error_message = "db_password must be at least 12 characters."
   }
+}
+
+variable "eks_node_sg_id" {
+  type        = string
+  description = "Security group ID of the EKS managed node group (find via AWS Console > EKS > Networking)"
+  default     = ""
 }
 
 variable "enable_rds_backups" {

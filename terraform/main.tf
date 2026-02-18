@@ -30,34 +30,19 @@ module "vpc" {
     "kubernetes.io/role/internal-elb" = 1
   }
 }
+# EKS cluster was created manually — read its values via data sources
+data "aws_eks_cluster" "this" {
+  name = var.cluster_name
+}
 
-module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "20.31.0"
+data "tls_certificate" "eks" {
+  url = data.aws_eks_cluster.this.identity[0].oidc[0].issuer
+}
 
-  cluster_name                             = var.cluster_name
-  cluster_version                          = "1.34"
-  enable_cluster_creator_admin_permissions = true
-
-  cluster_endpoint_public_access = true
-
-  vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
-
-  cluster_addons = {
-    aws-ebs-csi-driver = {}
-  }
-
-  eks_managed_node_groups = {
-    default = {
-      instance_types = ["t4g.small"]
-      min_size       = 1
-      max_size       = 2
-      desired_size   = 1
-    }
-  }
-
-  tags = var.tags
+resource "aws_iam_openid_connect_provider" "eks" {
+  url             = data.aws_eks_cluster.this.identity[0].oidc[0].issuer
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.eks.certificates[0].sha1_fingerprint]
 }
 
 resource "aws_ecr_repository" "backend" {
@@ -91,7 +76,7 @@ resource "aws_security_group_rule" "rds_from_eks" {
   to_port                  = 5432
   protocol                 = "tcp"
   security_group_id        = aws_security_group.rds.id
-  source_security_group_id = module.eks.node_security_group_id
+  source_security_group_id = var.eks_node_sg_id
 }
 
 resource "aws_security_group_rule" "rds_egress" {
@@ -195,11 +180,11 @@ data "aws_iam_policy_document" "adot_assume" {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
       type        = "Federated"
-      identifiers = [module.eks.oidc_provider_arn]
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
     }
     condition {
       test     = "StringEquals"
-      variable = "${replace(module.eks.oidc_provider, "https://", "")}:sub"
+      variable = "${replace(data.aws_eks_cluster.this.identity[0].oidc[0].issuer, "https://", "")}:sub"
       values   = ["system:serviceaccount:prod:adot-collector"]
     }
   }
@@ -213,4 +198,76 @@ resource "aws_iam_role" "adot_collector" {
 resource "aws_iam_role_policy_attachment" "adot_xray" {
   role       = aws_iam_role.adot_collector.name
   policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+}
+
+# AWS Load Balancer Controller — IRSA
+data "aws_iam_policy_document" "alb_controller_assume" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(data.aws_eks_cluster.this.identity[0].oidc[0].issuer, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:aws-load-balancer-controller"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(data.aws_eks_cluster.this.identity[0].oidc[0].issuer, "https://", "")}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "alb_controller" {
+  name               = "${var.project_name}-alb-controller"
+  assume_role_policy = data.aws_iam_policy_document.alb_controller_assume.json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "alb_controller" {
+  role       = aws_iam_role.alb_controller.name
+  policy_arn = "arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess"
+}
+
+resource "aws_iam_role_policy_attachment" "alb_controller_ec2" {
+  role       = aws_iam_role.alb_controller.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
+}
+
+resource "helm_release" "alb_controller" {
+  name       = "aws-load-balancer-controller"
+  repository = "https://aws.github.io/eks-charts"
+  chart      = "aws-load-balancer-controller"
+  version    = "1.8.1"
+  namespace  = "kube-system"
+
+  set {
+    name  = "clusterName"
+    value = data.aws_eks_cluster.this.name
+  }
+  set {
+    name  = "serviceAccount.create"
+    value = "true"
+  }
+  set {
+    name  = "serviceAccount.name"
+    value = "aws-load-balancer-controller"
+  }
+  set {
+    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = aws_iam_role.alb_controller.arn
+  }
+  set {
+    name  = "region"
+    value = var.region
+  }
+  set {
+    name  = "vpcId"
+    value = module.vpc.vpc_id
+  }
+
+  depends_on = [data.aws_eks_cluster.this]
 }
