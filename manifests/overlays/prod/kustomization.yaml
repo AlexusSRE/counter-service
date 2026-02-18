@@ -5,9 +5,9 @@ resources:
   - ../../base
 images:
   - name: 714000371621.dkr.ecr.eu-west-2.amazonaws.com/counter-backend
-    newTag: sha-REPLACE
+    newTag: sha-537b8650c6a652950629ddfabe18edc6ae9d1d9c
   - name: 714000371621.dkr.ecr.eu-west-2.amazonaws.com/counter-frontend
-    newTag: sha-REPLACE
+    newTag: sha-537b8650c6a652950629ddfabe18edc6ae9d1d9c
 patches:    
   - target:
       kind: Deployment
