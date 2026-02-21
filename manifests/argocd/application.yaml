@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: counter-service-prod
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+  source:
+    repoURL: https://github.com/AlexusSRE/counter-service
+    targetRevision: codex/implement-aws-eks-gitops-microservice-with-finops
+    path: manifests/overlays/prod
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: backend-db
+      jsonPointers:
+        - /data
+        - /stringData
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true

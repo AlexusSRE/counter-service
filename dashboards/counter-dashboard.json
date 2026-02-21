@@ -1,0 +1,62 @@
+{
+  "title": "Counter Service Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Request Rate (rps)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{endpoint=~\"/api/counter|/healthz\"}[5m]))", "legendFormat": "rps" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "p95 Latency",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Error Rate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m]))", "legendFormat": "5xx rate" }
+      ]
+    },
+    {
+      "type": "gauge",
+      "title": "Counter Value",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "counter_value", "legendFormat": "value" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Pod CPU (bonus)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"prod\",pod=~\"backend-.*|frontend-.*\",container!=\"POD\"}[5m])) by (pod)", "legendFormat": "{{pod}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Pod Memory (bonus)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        { "expr": "sum(container_memory_working_set_bytes{namespace=\"prod\",pod=~\"backend-.*|frontend-.*\",container!=\"POD\"}) by (pod)", "legendFormat": "{{pod}}" }
+      ]
+    }
+  ],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" }
+}
