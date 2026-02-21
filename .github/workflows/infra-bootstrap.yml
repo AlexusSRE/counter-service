@@ -77,13 +77,13 @@ jobs:
             fi
           fi
 
-          terraform import "aws_eks_addon.coredns"              "${{ env.CLUSTER_NAME }}:coredns"                  2>/dev/null || true
-          terraform import "aws_eks_addon.kube_proxy"           "${{ env.CLUSTER_NAME }}:kube-proxy"               2>/dev/null || true
-          terraform import "aws_eks_addon.vpc_cni"              "${{ env.CLUSTER_NAME }}:vpc-cni"                  2>/dev/null || true
-          terraform import "aws_eks_addon.ebs_csi"              "${{ env.CLUSTER_NAME }}:aws-ebs-csi-driver"       2>/dev/null || true
-          terraform import "aws_eks_addon.metrics_server"       "${{ env.CLUSTER_NAME }}:metrics-server"           2>/dev/null || true
-          terraform import "aws_eks_addon.pod_identity_agent"   "${{ env.CLUSTER_NAME }}:eks-pod-identity-agent"  2>/dev/null || true
-          terraform import "aws_eks_addon.node_monitoring_agent" "${{ env.CLUSTER_NAME }}:eks-node-monitoring-agent" 2>/dev/null || true
+          terraform import "aws_eks_addon.coredns"                 "${{ env.CLUSTER_NAME }}:coredns"                       2>/dev/null || true
+          terraform import "aws_eks_addon.kube_proxy"              "${{ env.CLUSTER_NAME }}:kube-proxy"                    2>/dev/null || true
+          terraform import "aws_eks_addon.vpc_cni"                 "${{ env.CLUSTER_NAME }}:vpc-cni"                       2>/dev/null || true
+          terraform import "aws_eks_addon.metrics_server"          "${{ env.CLUSTER_NAME }}:metrics-server"                2>/dev/null || true
+          terraform import "aws_eks_addon.pod_identity_agent"      "${{ env.CLUSTER_NAME }}:eks-pod-identity-agent"        2>/dev/null || true
+          terraform import "aws_eks_addon.node_monitoring_agent"   "${{ env.CLUSTER_NAME }}:eks-node-monitoring-agent"     2>/dev/null || true
+          terraform import "aws_eks_addon.cloudwatch_observability" "${{ env.CLUSTER_NAME }}:amazon-cloudwatch-observability" 2>/dev/null || true
 
           terraform import aws_iam_role.node_group \
             "${{ env.CLUSTER_NAME }}-node-group-role" 2>/dev/null || true
@@ -198,10 +198,57 @@ jobs:
                 kind: "*"
           EOF
 
+  # ── Stage 4: Observability stack (Prometheus + Grafana) ─────────────────────
+  observability:
+    name: "Observability Stack"
+    runs-on: ubuntu-latest
+    needs: infra
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.TF_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Configure kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name   ${{ env.CLUSTER_NAME }}
+
+      - name: Add Prometheus community Helm repo
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+
+      - name: Install / upgrade kube-prometheus-stack
+        run: |
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          helm upgrade --install kube-prometheus-stack \
+            prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --values manifests/observability/kube-prometheus-values.yaml \
+            --wait --timeout 5m
+
+      - name: Print Grafana access info
+        run: |
+          echo "## Grafana (metrics)" >> $GITHUB_STEP_SUMMARY
+          echo "Port-forward: \`kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80\`" >> $GITHUB_STEP_SUMMARY
+          echo "URL: http://localhost:3000 — admin / admin" >> $GITHUB_STEP_SUMMARY
+
+  # ── Stage 5: Seed Kubernetes secrets + deploy via Argo CD ───────────────────
   deploy:
     name: "Deploy App"
     runs-on: ubuntu-latest
-    needs: [app-terraform, argocd-install]
+    needs: [app-terraform, argocd-install, observability]
 
     steps:
       - uses: actions/checkout@v4
@@ -250,7 +297,6 @@ jobs:
             --from-literal=DB_USER=counter \
             --from-literal=OTEL_SERVICE_NAME=counter-backend \
             --from-literal=OTEL_ENV=prod \
-            --from-literal=OTEL_ENABLED=false \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply Argo CD Application
@@ -286,4 +332,11 @@ jobs:
           echo "| Backend ECR | ${{ env.BACKEND_ECR }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Frontend ECR | ${{ env.FRONTEND_ECR }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Argo CD UI: \`kubectl port-forward svc/argocd-server -n argocd 8080:443\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Access" >> $GITHUB_STEP_SUMMARY
+          echo "| Tool | Command |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Argo CD | \`kubectl port-forward svc/argocd-server -n argocd 8080:443\` → https://localhost:8080 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Grafana (metrics) | \`kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80\` → http://localhost:3000 (admin/admin) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Prometheus | \`kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090\` → http://localhost:9090 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Logs | AWS Console → CloudWatch → Log groups → /aws/containerinsights/${{ env.CLUSTER_NAME }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Traces | AWS Console → X-Ray → Traces |" >> $GITHUB_STEP_SUMMARY

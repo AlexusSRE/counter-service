@@ -4,7 +4,7 @@ metadata:
   name: adot-collector
   namespace: prod
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::<AWS_ACCOUNT_ID>:role/<ADOT_IRSA_ROLE_NAME>
+    eks.amazonaws.com/role-arn: arn:aws:iam::630943284793:role/alex-counter-service-adot-collector
 ---
 apiVersion: v1
 kind: ConfigMap

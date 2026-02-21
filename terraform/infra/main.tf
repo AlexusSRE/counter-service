@@ -169,6 +169,17 @@ resource "aws_eks_addon" "node_monitoring_agent" {
   depends_on                  = [aws_eks_node_group.default]
 }
 
+# Ships container logs to CloudWatch Logs via Fluent Bit (logs)
+# and sends Container Insights metrics to CloudWatch (metrics).
+resource "aws_eks_addon" "cloudwatch_observability" {
+  cluster_name                = data.aws_eks_cluster.platform.name
+  addon_name                  = "amazon-cloudwatch-observability"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  tags                        = var.tags
+  depends_on                  = [aws_eks_node_group.default, aws_iam_role_policy_attachment.node_cloudwatch]
+}
+
 # ── EKS Node Group ────────────────────────────────────────────────────────────
 
 resource "aws_iam_role" "node_group" {
@@ -198,6 +209,13 @@ resource "aws_iam_role_policy_attachment" "node_cni" {
 resource "aws_iam_role_policy_attachment" "node_ecr" {
   role       = aws_iam_role.node_group.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+# CloudWatch Container Insights — lets Fluent Bit ship logs and the CW agent
+# ship metrics without a separate IRSA role (node role is sufficient for demos).
+resource "aws_iam_role_policy_attachment" "node_cloudwatch" {
+  role       = aws_iam_role.node_group.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
 # Modern replacement for aws-auth ConfigMap — grants cluster access via EKS API.

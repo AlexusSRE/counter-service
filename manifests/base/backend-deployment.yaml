@@ -28,9 +28,6 @@ spec:
                 name: backend-config
             - secretRef:
                 name: backend-db
-          env:
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://adot-collector.prod.svc.cluster.local:4318"
           resources:
             requests:
               cpu: 100m
