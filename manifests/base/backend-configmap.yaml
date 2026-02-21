@@ -12,4 +12,4 @@ data:
   OTEL_ENV: "prod"
   OTEL_ENABLED: "true"
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://adot-collector.prod.svc.cluster.local:4318"
-  FRONTEND_URL: "http://k8s-prod-counters-962591410f-1791204388.eu-west-2.elb.amazonaws.com"
+  FRONTEND_URL: "k8s-prod-counters-962591410f-519976047.eu-west-2.elb.amazonaws.com"

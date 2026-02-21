@@ -21,8 +21,8 @@ except Exception:
     OTEL_ENABLED = False
 
 otel_env = os.getenv("OTEL_ENABLED")
-if otel_env is not None and OTEL_ENABLED:
-    OTEL_ENABLED = otel_env.lower() in ("1", "true", "yes", "on")
+if otel_env is not None:
+    OTEL_ENABLED = OTEL_ENABLED and otel_env.lower() in ("1", "true", "yes", "on")
 
 app = Flask(__name__)
 

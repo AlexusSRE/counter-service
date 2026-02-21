@@ -72,3 +72,15 @@ Enabled via `OTEL_ENABLED: "true"` in the backend ConfigMap.
 - Direct link: https://eu-west-2.console.aws.amazon.com/xray/home?region=eu-west-2#/traces
 - Filter by service name: `counter-backend`
 - Generate traffic (click the counter in the app), then refresh the Traces list; each request appears as a trace with spans for Flask, SQL, etc.
+
+**Troubleshooting traces**
+
+1. Confirm backend has OTEL env:  
+   `kubectl exec -n prod deployment/backend -- env | grep OTEL`  
+   Expect `OTEL_ENABLED=true`, `OTEL_EXPORTER_OTLP_ENDPOINT=http://adot-collector.prod.svc.cluster.local:4318`.
+
+2. Check ADOT collector is receiving:  
+   `kubectl logs -n prod deployment/adot-collector -f --tail=100`  
+   With the `logging` exporter enabled you should see trace/span log lines when the app is used.
+
+3. If ADOT logs show traces but X-Ray does not, check the collector pod’s IAM (IRSA) has `AWSXRayDaemonWriteAccess` and the X-Ray console is set to region `eu-west-2`.
