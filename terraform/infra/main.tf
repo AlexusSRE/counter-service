@@ -2,6 +2,8 @@
 # via the AWS console and referenced here as a data source. eks:CreateNodegroup
 # is allowed, so Terraform fully manages the node group and everything else.
 
+data "aws_caller_identity" "current" {}
+
 data "aws_eks_cluster" "platform" {
   name = var.cluster_name
 }
@@ -212,6 +214,25 @@ resource "aws_eks_access_entry" "node_group" {
   cluster_name  = data.aws_eks_cluster.platform.name
   principal_arn = aws_iam_role.node_group.arn
   type          = "EC2_LINUX"
+}
+
+# Grant the Terraform CI role (used by GitHub Actions for kubectl/helm) full
+# cluster admin access. The role has AWS AdministratorAccess but EKS has its
+# own access control layer that must be configured separately.
+resource "aws_eks_access_entry" "terraform_ci" {
+  cluster_name  = data.aws_eks_cluster.platform.name
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-terraform-ci"
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy" "terraform_ci_admin" {
+  cluster_name  = data.aws_eks_cluster.platform.name
+  principal_arn = aws_eks_access_entry.terraform_ci.principal_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
 }
 
 resource "aws_eks_node_group" "default" {

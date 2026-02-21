@@ -149,7 +149,7 @@ jobs:
 
       - name: Terraform Apply (app)
         working-directory: terraform/app
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve -lock-timeout=5m
 
   argocd-install:
     name: "Install Argo CD"
