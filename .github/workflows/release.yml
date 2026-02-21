@@ -3,8 +3,9 @@ name: release
 on:
   push:
     branches: ["main"]
-    paths-ignore:
-      - "manifests/**"
+    paths:
+      - "backend/**"
+      - "frontend/**"
   workflow_dispatch:
   
 permissions:

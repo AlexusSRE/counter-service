@@ -229,9 +229,17 @@ jobs:
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo update
 
-      - name: Install / upgrade kube-prometheus-stack
+      - name: Seed Grafana admin secret
         run: |
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic grafana-admin \
+            --namespace=monitoring \
+            --from-literal=admin-user=admin \
+            --from-literal=admin-password=${{ secrets.GRAFANA_ADMIN_PASSWORD }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Install / upgrade kube-prometheus-stack
+        run: |
           helm upgrade --install kube-prometheus-stack \
             prometheus-community/kube-prometheus-stack \
             --namespace monitoring \
@@ -242,7 +250,7 @@ jobs:
         run: |
           echo "## Grafana (metrics)" >> $GITHUB_STEP_SUMMARY
           echo "Port-forward: \`kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80\`" >> $GITHUB_STEP_SUMMARY
-          echo "URL: http://localhost:3000 — admin / admin" >> $GITHUB_STEP_SUMMARY
+          echo "URL: http://localhost:3000 — admin / (GRAFANA_ADMIN_PASSWORD secret)" >> $GITHUB_STEP_SUMMARY
 
   # ── Stage 5: Seed Kubernetes secrets + deploy via Argo CD ───────────────────
   deploy:

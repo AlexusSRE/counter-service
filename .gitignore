@@ -13,6 +13,10 @@ env/
 .pytest_cache/
 .mypy_cache/
 
+# Kubernetes secrets — never commit real secret manifests
+manifests/**/backend-secret.yaml
+manifests/**/*-secret.yaml
+
 # Terraform
 terraform/**/.terraform/
 terraform/**/terraform.tfvars

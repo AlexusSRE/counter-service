@@ -45,7 +45,12 @@ prometheus:
         memory: 512Mi
 
 grafana:
-  adminPassword: "admin"
+  # Password is injected at deploy time from the grafana-admin K8s secret,
+  # which is seeded by the bootstrap workflow from GRAFANA_ADMIN_PASSWORD GitHub secret.
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
   defaultDashboardsEnabled: true
   resources:
     requests:
