@@ -202,6 +202,11 @@ resource "aws_iam_role_policy_attachment" "node_ecr" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+resource "aws_iam_role_policy_attachment" "node_cloudwatch" {
+  role       = aws_iam_role.node_group.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
 # Modern replacement for aws-auth ConfigMap — grants cluster access via EKS API.
 resource "aws_eks_access_entry" "node_group" {
   cluster_name  = data.aws_eks_cluster.platform.name
