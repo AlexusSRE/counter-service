@@ -2,6 +2,7 @@ FROM python:3.12-slim
 WORKDIR /backend
 COPY requirements.txt .
 RUN useradd -u 10001 -m appuser \
+    && pip install --no-cache-dir setuptools \
     && pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 USER 10001
