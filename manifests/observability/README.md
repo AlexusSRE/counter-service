@@ -1,0 +1,70 @@
+# Observability Stack
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     counter-backend                      │
+│  /metrics (Prometheus) ─────────────────────────────►   │
+│  OTLP traces ──────────────────────────────────────►    │
+└──────────────┬─────────────────────┬────────────────────┘
+               │                     │
+               ▼                     ▼
+    ┌─────────────────┐    ┌──────────────────┐
+    │   Prometheus    │    │  ADOT Collector  │
+    │  (monitoring ns)│    │   (prod ns)      │
+    └────────┬────────┘    └────────┬─────────┘
+             │                      │
+             ▼                      ▼
+      ┌──────────┐           ┌─────────────┐
+      │  Grafana │           │  AWS X-Ray  │
+      └──────────┘           └─────────────┘
+
+        Fluent Bit (via amazon-cloudwatch-observability EKS addon)
+                              │
+                              ▼
+                    ┌──────────────────┐
+                    │  CloudWatch Logs │
+                    │  /aws/containers │
+                    │  insights/<name> │
+                    └──────────────────┘
+```
+
+## Logs — AWS CloudWatch
+
+Deployed via the `amazon-cloudwatch-observability` EKS managed addon.
+
+Fluent Bit ships all pod logs to:
+```
+CloudWatch → Log groups → /aws/containerinsights/alex-counter-service/application
+```
+
+View in AWS Console: **CloudWatch → Logs → Log groups**
+
+## Metrics — Prometheus + Grafana
+
+Deployed via Helm (kube-prometheus-stack) into the `monitoring` namespace.
+
+The backend exposes `GET /metrics` with:
+- `http_requests_total` — request count by method/endpoint/status
+- `http_request_duration_seconds` — latency histogram
+- `counter_value` — current counter state
+
+```bash
+# Access Grafana
+kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80
+# Open http://localhost:3000  →  admin / admin
+# Dashboard: Counter Service → Counter Backend
+```
+
+## Traces — AWS X-Ray (bonus)
+
+The ADOT Collector receives OTLP traces from the backend over HTTP and forwards them to X-Ray.
+
+```
+backend → http://adot-collector.prod.svc.cluster.local:4318 → ADOT → X-Ray
+```
+
+Enabled via `OTEL_ENABLED: "true"` in the backend ConfigMap.
+
+View in AWS Console: **X-Ray → Traces** — filter by `service.name = counter-backend`

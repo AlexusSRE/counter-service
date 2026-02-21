@@ -1,25 +1,101 @@
+## kube-prometheus-stack values — tuned for a single t4g.medium node
+## Helm: prometheus-community/kube-prometheus-stack
+
 prometheus:
   prometheusSpec:
-    retention: 24h
+    retention: 6h
     scrapeInterval: 30s
     evaluationInterval: 30s
+    # Scrape pods that have prometheus.io/scrape: "true" annotations
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorNamespaceSelector: {}
+    podMonitorSelector: {}
+    additionalScrapeConfigs:
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
     resources:
       requests:
         cpu: 100m
-        memory: 512Mi
+        memory: 256Mi
       limits:
-        cpu: 300m
-        memory: 1Gi
+        cpu: 500m
+        memory: 512Mi
 
 grafana:
   adminPassword: "admin"
+  defaultDashboardsEnabled: true
   resources:
     requests:
       cpu: 50m
-      memory: 128Mi
+      memory: 64Mi
     limits:
       cpu: 200m
-      memory: 256Mi
+      memory: 128Mi
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: custom
+          orgId: 1
+          folder: "Counter Service"
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/custom
+  dashboards:
+    custom:
+      counter-backend:
+        json: |
+          {
+            "title": "Counter Backend",
+            "uid": "counter-backend",
+            "panels": [
+              {
+                "type": "stat",
+                "title": "Counter Value",
+                "targets": [{"expr": "counter_value", "legendFormat": "value"}],
+                "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+              },
+              {
+                "type": "graph",
+                "title": "Request Rate (req/s)",
+                "targets": [{"expr": "rate(http_requests_total[1m])", "legendFormat": "{{method}} {{endpoint}} {{status}}"}],
+                "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+              },
+              {
+                "type": "graph",
+                "title": "Request Latency p99 (s)",
+                "targets": [{"expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))", "legendFormat": "p99 {{endpoint}}"}],
+                "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+              }
+            ],
+            "schemaVersion": 30,
+            "version": 1
+          }
 
 alertmanager:
   enabled: false
@@ -27,8 +103,17 @@ alertmanager:
 kube-state-metrics:
   resources:
     requests:
-      cpu: 30m
-      memory: 64Mi
+      cpu: 20m
+      memory: 32Mi
     limits:
       cpu: 100m
-      memory: 128Mi
+      memory: 64Mi
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
