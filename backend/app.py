@@ -1,6 +1,10 @@
+import logging
 import os
 import time
 from flask import Flask, jsonify, Response, g, request
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+log = logging.getLogger(__name__)
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
@@ -16,9 +20,10 @@ try:
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
     OTEL_ENABLED = True
-except Exception:
+except Exception as e:
     # Run without tracing if OpenTelemetry or its transitive deps are unavailable.
     OTEL_ENABLED = False
+    log.warning("Tracing disabled: OpenTelemetry import failed: %s", e)
 
 otel_env = os.getenv("OTEL_ENABLED")
 if otel_env is not None:
@@ -63,12 +68,12 @@ COUNTER_VALUE = Gauge("counter_value", "Current counter value")
 
 def setup_tracing() -> None:
     if not OTEL_ENABLED:
-        print("Tracing disabled: OTEL_ENABLED is not true", flush=True)
+        log.warning("Tracing disabled: OTEL_ENABLED is not true")
         return
 
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
     if not endpoint:
-        print("Tracing disabled: OTEL_EXPORTER_OTLP_ENDPOINT not set", flush=True)
+        log.warning("Tracing disabled: OTEL_EXPORTER_OTLP_ENDPOINT not set")
         return
 
     resource = Resource.create(
@@ -81,7 +86,7 @@ def setup_tracing() -> None:
     exporter = OTLPSpanExporter(endpoint=f"{endpoint}/v1/traces")
     tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(tracer_provider)
-    print(f"Tracing enabled: endpoint={endpoint}", flush=True)
+    log.warning("Tracing enabled: endpoint=%s", endpoint)
 
 
 if OTEL_ENABLED:
