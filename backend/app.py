@@ -63,10 +63,12 @@ COUNTER_VALUE = Gauge("counter_value", "Current counter value")
 
 def setup_tracing() -> None:
     if not OTEL_ENABLED:
+        print("Tracing disabled: OTEL_ENABLED is not true", flush=True)
         return
 
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
     if not endpoint:
+        print("Tracing disabled: OTEL_EXPORTER_OTLP_ENDPOINT not set", flush=True)
         return
 
     resource = Resource.create(
@@ -79,6 +81,7 @@ def setup_tracing() -> None:
     exporter = OTLPSpanExporter(endpoint=f"{endpoint}/v1/traces")
     tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(tracer_provider)
+    print(f"Tracing enabled: endpoint={endpoint}", flush=True)
 
 
 if OTEL_ENABLED:

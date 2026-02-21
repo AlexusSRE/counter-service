@@ -350,6 +350,8 @@ jobs:
             --from-literal=DB_USER=counter \
             --from-literal=OTEL_SERVICE_NAME=counter-backend \
             --from-literal=OTEL_ENV=prod \
+            --from-literal=OTEL_ENABLED=true \
+            --from-literal=OTEL_EXPORTER_OTLP_ENDPOINT=http://adot-collector.prod.svc.cluster.local:4318 \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply Argo CD Application
