@@ -138,14 +138,39 @@ jobs:
       - name: Import existing IAM resources (idempotent)
         working-directory: terraform/app
         run: |
+          # Helper: skip if already in state
+          tf_import_if_missing() {
+            local addr="$1"; local id="$2"
+            terraform state show "$addr" &>/dev/null && echo "skip $addr (already in state)" || \
+              terraform import "$addr" "$id" 2>/dev/null || true
+          }
+
           GITHUB_OIDC_ARN=$(aws iam list-open-id-connect-providers \
             --query "OpenIDConnectProviderList[?ends_with(Arn,'token.actions.githubusercontent.com')].Arn" \
             --output text 2>/dev/null)
           if [ -n "$GITHUB_OIDC_ARN" ]; then
-            terraform import aws_iam_openid_connect_provider.github "$GITHUB_OIDC_ARN" 2>/dev/null || true
+            tf_import_if_missing aws_iam_openid_connect_provider.github "$GITHUB_OIDC_ARN"
           fi
-          terraform import aws_iam_role.terraform_ci  alex-counter-service-terraform-ci        2>/dev/null || true
-          terraform import aws_iam_role.github_actions alex-counter-service-github-actions-role 2>/dev/null || true
+
+          tf_import_if_missing aws_iam_role.terraform_ci   alex-counter-service-terraform-ci
+          tf_import_if_missing aws_iam_role.github_actions  alex-counter-service-github-actions-role
+          tf_import_if_missing aws_iam_role.cluster_autoscaler alex-counter-service-cluster-autoscaler
+          tf_import_if_missing aws_iam_role.adot_collector     alex-counter-service-adot-collector
+          tf_import_if_missing aws_iam_role.alb_controller     alex-counter-service-alb-controller
+
+          ALB_POLICY_ARN=$(aws iam list-policies \
+            --query "Policies[?PolicyName=='alex-counter-service-alb-controller-policy'].Arn" \
+            --output text 2>/dev/null)
+          if [ -n "$ALB_POLICY_ARN" ]; then
+            tf_import_if_missing aws_iam_policy.alb_controller "$ALB_POLICY_ARN"
+          fi
+
+          CF_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='alex-counter-service frontend'].Id" \
+            --output text 2>/dev/null)
+          if [ -n "$CF_ID" ]; then
+            tf_import_if_missing aws_cloudfront_distribution.frontend "$CF_ID"
+          fi
 
       - name: Terraform Apply (app)
         working-directory: terraform/app
