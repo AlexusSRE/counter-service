@@ -27,6 +27,11 @@ output "vpc_id" {
   value = data.aws_vpc.platform.id
 }
 
+output "public_subnet_ids" {
+  value       = values(aws_subnet.public)[*].id
+  description = "Public subnet IDs where internet-facing ALBs should be created (for verification)."
+}
+
 output "node_group_role_arn" {
   value = aws_iam_role.node_group.arn
 }

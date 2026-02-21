@@ -58,7 +58,11 @@ resource "aws_subnet" "public" {
   cidr_block              = each.value
   availability_zone       = each.key
   map_public_ip_on_launch = true
-  tags                    = merge(var.tags, { Name = "${var.project_name}-public-${each.key}" })
+  tags = merge(var.tags, {
+    Name                                 = "${var.project_name}-public-${each.key}"
+    "kubernetes.io/role/elb"             = "1"
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
+  })
 }
 
 resource "aws_route_table" "public" {

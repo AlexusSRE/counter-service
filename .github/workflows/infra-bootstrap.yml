@@ -291,6 +291,7 @@ jobs:
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Grafana | http://${GRAFANA_HOST:-pending} |" >> $GITHUB_STEP_SUMMARY
           echo "| CloudWatch Logs | https://eu-west-2.console.aws.amazon.com/cloudwatch/home?region=eu-west-2#dashboards:name=alex-counter-service-logs |" >> $GITHUB_STEP_SUMMARY
+          echo "| X-Ray Traces | https://eu-west-2.console.aws.amazon.com/xray/home?region=eu-west-2#/traces |" >> $GITHUB_STEP_SUMMARY
 
   # ── Stage 5: Seed Kubernetes secrets + deploy via Argo CD ───────────────────
   deploy:
