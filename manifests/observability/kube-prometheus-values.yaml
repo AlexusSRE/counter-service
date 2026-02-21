@@ -52,6 +52,8 @@ grafana:
     userKey: admin-user
     passwordKey: admin-password
   defaultDashboardsEnabled: true
+  service:
+    type: LoadBalancer
   resources:
     requests:
       cpu: 50m

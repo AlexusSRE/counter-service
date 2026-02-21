@@ -278,6 +278,7 @@ jobs:
             prometheus-community/kube-prometheus-stack \
             --namespace monitoring \
             --values manifests/observability/kube-prometheus-values.yaml \
+            --force-conflicts \
             --wait --timeout 5m
 
       - name: Print Grafana access info
