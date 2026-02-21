@@ -243,7 +243,7 @@ resource "aws_eks_node_group" "default" {
   subnet_ids = data.aws_subnets.private.ids
 
   ami_type       = "AL2023_ARM_64_STANDARD"
-  instance_types = ["t4g.medium"]
+  instance_types = ["t4g.large"]
   capacity_type  = "ON_DEMAND"
 
   scaling_config {
