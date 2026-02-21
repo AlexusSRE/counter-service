@@ -1,0 +1,59 @@
+{
+  "widgets": [
+    {
+      "type": "log",
+      "width": 24,
+      "height": 6,
+      "properties": {
+        "title": "Backend Errors",
+        "region": "eu-west-2",
+        "view": "table",
+        "query": "SOURCE '/aws/containerinsights/alex-counter-service/application' | fields @timestamp, log, kubernetes.pod_name\n| filter kubernetes.namespace_name = 'prod' and kubernetes.container_name = 'backend'\n| filter log like /error|Error|ERROR|exception|Exception|traceback/\n| sort @timestamp desc\n| limit 50"
+      }
+    },
+    {
+      "type": "log",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "All Backend Logs",
+        "region": "eu-west-2",
+        "view": "table",
+        "query": "SOURCE '/aws/containerinsights/alex-counter-service/application' | fields @timestamp, log, kubernetes.pod_name\n| filter kubernetes.namespace_name = 'prod' and kubernetes.container_name = 'backend'\n| sort @timestamp desc\n| limit 100"
+      }
+    },
+    {
+      "type": "log",
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "All Frontend Logs",
+        "region": "eu-west-2",
+        "view": "table",
+        "query": "SOURCE '/aws/containerinsights/alex-counter-service/application' | fields @timestamp, log, kubernetes.pod_name\n| filter kubernetes.namespace_name = 'prod' and kubernetes.container_name = 'frontend'\n| sort @timestamp desc\n| limit 100"
+      }
+    },
+    {
+      "type": "log",
+      "width": 24,
+      "height": 4,
+      "properties": {
+        "title": "Pod Restarts / CrashLoops",
+        "region": "eu-west-2",
+        "view": "table",
+        "query": "SOURCE '/aws/containerinsights/alex-counter-service/dataplane' | fields @timestamp, log\n| filter log like /BackOff|CrashLoop|OOMKilled|Error/\n| sort @timestamp desc\n| limit 50"
+      }
+    },
+    {
+      "type": "log",
+      "width": 24,
+      "height": 4,
+      "properties": {
+        "title": "Log Volume by Pod (last 1h)",
+        "region": "eu-west-2",
+        "view": "table",
+        "query": "SOURCE '/aws/containerinsights/alex-counter-service/application' | filter kubernetes.namespace_name = 'prod'\n| stats count(*) as log_lines by kubernetes.pod_name\n| sort log_lines desc"
+      }
+    }
+  ]
+}

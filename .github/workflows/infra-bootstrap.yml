@@ -281,11 +281,20 @@ jobs:
             --force-conflicts \
             --wait --timeout 5m
 
+      - name: Create CloudWatch Logs dashboard
+        run: |
+          aws cloudwatch put-dashboard \
+            --dashboard-name "alex-counter-service-logs" \
+            --dashboard-body file://manifests/observability/cloudwatch-dashboard.json \
+            --region ${{ env.AWS_REGION }}
+
       - name: Print Grafana access info
         run: |
           echo "## Grafana (metrics)" >> $GITHUB_STEP_SUMMARY
           echo "Port-forward: \`kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80\`" >> $GITHUB_STEP_SUMMARY
           echo "URL: http://localhost:3000 — admin / (GRAFANA_ADMIN_PASSWORD secret)" >> $GITHUB_STEP_SUMMARY
+          echo "## Logs" >> $GITHUB_STEP_SUMMARY
+          echo "CloudWatch Dashboard: https://eu-west-2.console.aws.amazon.com/cloudwatch/home?region=eu-west-2#dashboards:name=alex-counter-service-logs" >> $GITHUB_STEP_SUMMARY
 
   # ── Stage 5: Seed Kubernetes secrets + deploy via Argo CD ───────────────────
   deploy:
@@ -300,6 +309,10 @@ jobs:
         with:
           role-to-assume: ${{ env.TF_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.0"
 
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
