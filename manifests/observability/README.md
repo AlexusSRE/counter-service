@@ -67,4 +67,8 @@ backend → http://adot-collector.prod.svc.cluster.local:4318 → ADOT → X-Ray
 
 Enabled via `OTEL_ENABLED: "true"` in the backend ConfigMap.
 
-View in AWS Console: **X-Ray → Traces** — filter by `service.name = counter-backend`
+**Where to see traces:** AWS Console → **X-Ray** → **Traces** (or **Service map**).
+
+- Direct link: https://eu-west-2.console.aws.amazon.com/xray/home?region=eu-west-2#/traces
+- Filter by service name: `counter-backend`
+- Generate traffic (click the counter in the app), then refresh the Traces list; each request appears as a trace with spans for Flask, SQL, etc.

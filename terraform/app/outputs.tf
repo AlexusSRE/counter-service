@@ -19,7 +19,3 @@ output "cluster_autoscaler_role_arn" {
   value = aws_iam_role.cluster_autoscaler.arn
 }
 
-output "cloudfront_domain_name" {
-  value       = aws_cloudfront_distribution.frontend.domain_name
-  description = "Your HTTPS URL: https://<this value>"
-}

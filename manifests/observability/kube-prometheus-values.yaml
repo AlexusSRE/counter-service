@@ -45,6 +45,9 @@ prometheus:
         memory: 512Mi
 
 grafana:
+  sidecar:
+    datasources:
+      uid: prometheus
   # Password is injected at deploy time from the grafana-admin K8s secret,
   # which is seeded by the bootstrap workflow from GRAFANA_ADMIN_PASSWORD GitHub secret.
   admin:
@@ -80,28 +83,35 @@ grafana:
           {
             "title": "Counter Backend",
             "uid": "counter-backend",
+            "schemaVersion": 38,
+            "version": 1,
             "panels": [
               {
+                "id": 1,
                 "type": "stat",
                 "title": "Counter Value",
-                "targets": [{"expr": "counter_value", "legendFormat": "value"}],
-                "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+                "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+                "datasource": {"type": "prometheus", "uid": "prometheus"},
+                "targets": [{"expr": "counter_value", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}],
+                "options": {"reduceOptions": {"calcs": ["lastNotNull"]}}
               },
               {
-                "type": "graph",
+                "id": 2,
+                "type": "timeseries",
                 "title": "Request Rate (req/s)",
-                "targets": [{"expr": "rate(http_requests_total[1m])", "legendFormat": "{{method}} {{endpoint}} {{status}}"}],
-                "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4}
+                "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+                "datasource": {"type": "prometheus", "uid": "prometheus"},
+                "targets": [{"expr": "rate(http_requests_total[1m])", "legendFormat": "{{method}} {{endpoint}} {{status}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
               },
               {
-                "type": "graph",
+                "id": 3,
+                "type": "timeseries",
                 "title": "Request Latency p99 (s)",
-                "targets": [{"expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))", "legendFormat": "p99 {{endpoint}}"}],
-                "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4}
+                "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+                "datasource": {"type": "prometheus", "uid": "prometheus"},
+                "targets": [{"expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))", "legendFormat": "p99 {{endpoint}}", "refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}}]
               }
-            ],
-            "schemaVersion": 30,
-            "version": 1
+            ]
           }
 
 alertmanager:
