@@ -225,7 +225,7 @@ resource "aws_eks_access_entry" "terraform_ci" {
   type          = "STANDARD"
 }
 
-resource "aws_eks_access_policy" "terraform_ci_admin" {
+resource "aws_eks_access_policy_association" "terraform_ci_admin" {
   cluster_name  = data.aws_eks_cluster.platform.name
   principal_arn = aws_eks_access_entry.terraform_ci.principal_arn
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
