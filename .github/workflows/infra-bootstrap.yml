@@ -379,7 +379,16 @@ jobs:
 
       - name: Summary
         run: |
-          echo "## Bootstrap complete" >> $GITHUB_STEP_SUMMARY
+          # Resolve live URLs
+          ARGOCD_URL=$(kubectl get svc argocd-server -n argocd \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "use port-forward")
+          GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "use port-forward")
+          COUNTER_URL=$(kubectl get ingress counter-service -n prod \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+          CF_URL=$(cd terraform/app && terraform output -raw cloudfront_domain_name 2>/dev/null || echo "pending")
+
+          echo "## Bootstrap complete ✅" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
@@ -388,11 +397,13 @@ jobs:
           echo "| Backend ECR | ${{ env.BACKEND_ECR }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Frontend ECR | ${{ env.FRONTEND_ECR }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Access" >> $GITHUB_STEP_SUMMARY
-          echo "| Tool | Command |" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Service URLs" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | URL |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Argo CD | \`kubectl port-forward svc/argocd-server -n argocd 8080:443\` → https://localhost:8080 |" >> $GITHUB_STEP_SUMMARY
-          echo "| Grafana (metrics) | \`kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80\` → http://localhost:3000 (admin/admin) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Prometheus | \`kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090\` → http://localhost:9090 |" >> $GITHUB_STEP_SUMMARY
-          echo "| Logs | AWS Console → CloudWatch → Log groups → /aws/containerinsights/${{ env.CLUSTER_NAME }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Traces | AWS Console → X-Ray → Traces |" >> $GITHUB_STEP_SUMMARY
+          echo "| Counter App (CloudFront HTTPS) | https://${CF_URL} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Counter App (ALB direct) | http://${COUNTER_URL} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Argo CD | http://${ARGOCD_URL} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Grafana | http://${GRAFANA_URL} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CloudWatch Logs | https://eu-west-2.console.aws.amazon.com/cloudwatch/home?region=eu-west-2#dashboards/dashboard/alex-counter-service-logs |" >> $GITHUB_STEP_SUMMARY
+          echo "| X-Ray Traces | https://eu-west-2.console.aws.amazon.com/xray/map?region=eu-west-2 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Prometheus | \`kubectl port-forward svc/kube-prometheus-stack-prometheus -n monitoring 9090:9090\` |" >> $GITHUB_STEP_SUMMARY

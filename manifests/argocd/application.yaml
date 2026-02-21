@@ -10,7 +10,7 @@ spec:
     namespace: prod
   source:
     repoURL: https://github.com/AlexusSRE/counter-service
-    targetRevision: codex/implement-aws-eks-gitops-microservice-with-finops
+    targetRevision: main
     path: manifests/overlays/prod
   ignoreDifferences:
     - group: ""
