@@ -133,3 +133,6 @@ terraform/terraform.tfstate.backup
 terraform/.terraform/
 terraform/.terraform.tfstate.lock.info
 terraform/crash.log
+terraform/**/terraform.tfvars
+terraform/**/.terraform/
+terraform/**/crash.log
