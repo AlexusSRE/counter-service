@@ -5,6 +5,6 @@ resources:
   - ../../base
 images:
   - name: 630943284793.dkr.ecr.eu-west-2.amazonaws.com/counter-backend
-    newTag: sha-7f5ab84a1c5a1b8c2fb241a9e75a353c4f4c1377
+    newTag: sha-75f19a643fc0833a265bbd7195418d16823100ce
   - name: 630943284793.dkr.ecr.eu-west-2.amazonaws.com/counter-frontend
-    newTag: sha-7f5ab84a1c5a1b8c2fb241a9e75a353c4f4c1377
+    newTag: sha-75f19a643fc0833a265bbd7195418d16823100ce
