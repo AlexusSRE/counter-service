@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - backend-configmap.yaml
+  - backend-secret.yaml
   - backend-serviceaccount.yaml
   - backend-deployment.yaml
   - backend-service.yaml

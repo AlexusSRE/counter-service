@@ -13,9 +13,9 @@ env/
 .pytest_cache/
 .mypy_cache/
 
-# Kubernetes secrets — never commit real secret manifests
-manifests/**/backend-secret.yaml
+# Kubernetes secrets — never commit real passwords (backend-secret has placeholder only)
 manifests/**/*-secret.yaml
+!manifests/base/backend-secret.yaml
 
 # Terraform
 terraform/**/.terraform/

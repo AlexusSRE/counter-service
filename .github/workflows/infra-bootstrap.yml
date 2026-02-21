@@ -379,14 +379,20 @@ jobs:
 
       - name: Summary
         run: |
-          # Resolve live URLs
           ARGOCD_URL=$(kubectl get svc argocd-server -n argocd \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "use port-forward")
           GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "use port-forward")
           COUNTER_URL=$(kubectl get ingress counter-service -n prod \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
-          CF_URL=$(cd terraform/app && terraform output -raw cloudfront_domain_name 2>/dev/null || echo "pending")
+          CF_DOMAIN=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='${{ env.CLUSTER_NAME }} frontend'].DomainName" \
+            --output text 2>/dev/null)
+          if [ -z "$CF_DOMAIN" ] || [ "$CF_DOMAIN" = "None" ]; then
+            CF_URL="pending (CloudFront takes ~15 min to deploy)"
+          else
+            CF_URL="https://${CF_DOMAIN}"
+          fi
 
           echo "## Bootstrap complete ✅" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -400,7 +406,7 @@ jobs:
           echo "### 🔗 Service URLs" >> $GITHUB_STEP_SUMMARY
           echo "| Service | URL |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Counter App (CloudFront HTTPS) | https://${CF_URL} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Counter App (CloudFront HTTPS) | $CF_URL |" >> $GITHUB_STEP_SUMMARY
           echo "| Counter App (ALB direct) | http://${COUNTER_URL} |" >> $GITHUB_STEP_SUMMARY
           echo "| Argo CD | http://${ARGOCD_URL} |" >> $GITHUB_STEP_SUMMARY
           echo "| Grafana | http://${GRAFANA_URL} |" >> $GITHUB_STEP_SUMMARY
