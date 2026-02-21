@@ -114,7 +114,6 @@ def init_db() -> None:
                         """
                     )
                 )
-            )
             conn.execute(
                 text(
                     """
