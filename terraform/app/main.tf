@@ -1,5 +1,3 @@
-# Read existing infra resources (created by terraform/infra)
-
 data "aws_eks_cluster" "this" {
   name = var.cluster_name
 }
@@ -22,7 +20,7 @@ locals {
   oidc_issuer = replace(data.aws_eks_cluster.this.identity[0].oidc[0].issuer, "https://", "")
 }
 
-# ── Terraform robot role (for CI/CD to run terraform) ────────────────────────
+# ── Terraform CI role ─────────────────────────────────────────────────────────
 
 resource "aws_iam_role" "terraform_ci" {
   name = "${var.project_name}-terraform-ci"
@@ -198,7 +196,6 @@ resource "helm_release" "cluster_autoscaler" {
     name  = "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
     value = aws_iam_role.cluster_autoscaler.arn
   }
-  # Scale down aggressively when node is underutilised
   set {
     name  = "extraArgs.scale-down-utilization-threshold"
     value = "0.5"

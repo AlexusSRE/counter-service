@@ -1,6 +1,6 @@
 import os
 import time
-from flask import Flask, jsonify, Response
+from flask import Flask, jsonify, Response, g, request
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
@@ -17,11 +17,9 @@ try:
 
     OTEL_ENABLED = True
 except Exception:
-    # If OpenTelemetry or its transitive dependencies (e.g. pkg_resources)
-    # are not available, run the service without tracing instead of crashing.
+    # Run without tracing if OpenTelemetry or its transitive deps are unavailable.
     OTEL_ENABLED = False
 
-# Optional explicit toggle via env. If imports failed above, this stays False.
 otel_env = os.getenv("OTEL_ENABLED")
 if otel_env is not None and OTEL_ENABLED:
     OTEL_ENABLED = otel_env.lower() in ("1", "true", "yes", "on")
@@ -93,9 +91,8 @@ if OTEL_ENABLED:
 def init_db() -> None:
     try:
         with engine.begin() as conn:
-            # Use information_schema check instead of CREATE TABLE IF NOT EXISTS
-            # to avoid UniqueViolation on pg_type when an orphaned type exists
-            # from a previous failed transaction.
+            # information_schema check avoids UniqueViolation on pg_type when an
+            # orphaned type exists from a previous failed transaction.
             table_exists = conn.execute(
                 text(
                     "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
@@ -129,16 +126,12 @@ def init_db() -> None:
 
 @app.before_request
 def before_request_metrics():
-    from flask import g, request
-
     g.start_time = time.time()
     g.endpoint = request.path
 
 
 @app.after_request
 def after_request_metrics(response):
-    from flask import g, request
-
     elapsed = time.time() - getattr(g, "start_time", time.time())
     endpoint = getattr(g, "endpoint", "unknown")
     REQUEST_COUNT.labels(request.method, endpoint, response.status_code).inc()

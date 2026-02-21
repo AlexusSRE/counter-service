@@ -1,91 +1,248 @@
-data "aws_availability_zones" "available" {}
+# eks:CreateCluster is denied by the SCP in this OU. The cluster is created once
+# via the AWS console and referenced here as a data source. eks:CreateNodegroup
+# is allowed, so Terraform fully manages the node group and everything else.
+
+data "aws_eks_cluster" "platform" {
+  name = var.cluster_name
+}
+
+data "aws_vpc" "platform" {
+  id = data.aws_eks_cluster.platform.vpc_config[0].vpc_id
+}
+
+data "aws_subnets" "private" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.platform.id]
+  }
+  filter {
+    name   = "map-public-ip-on-launch"
+    values = ["false"]
+  }
+}
 
 locals {
-  azs = slice(data.aws_availability_zones.available.names, 0, 2)
+  oidc_issuer = data.aws_eks_cluster.platform.identity[0].oidc[0].issuer
 }
-
-# ── VPC ──────────────────────────────────────────────────────────────────────
-
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "5.8.1"
-
-  name = "${var.project_name}-vpc"
-  cidr = "10.0.0.0/16"
-
-  azs             = local.azs
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
-
-  enable_nat_gateway = true
-  single_nat_gateway = true
-
-  tags = var.tags
-
-  public_subnet_tags = {
-    "kubernetes.io/role/elb" = 1
-  }
-
-  private_subnet_tags = {
-    "kubernetes.io/role/internal-elb" = 1
-  }
-}
-
-# ── EKS ──────────────────────────────────────────────────────────────────────
-
-module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "20.31.0"
-
-  cluster_name                             = var.cluster_name
-  cluster_version                          = "1.34"
-  enable_cluster_creator_admin_permissions = true
-  cluster_endpoint_public_access           = true
-
-  vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
-
-  cluster_addons = {
-    aws-ebs-csi-driver = {}
-    coredns            = {}
-    kube-proxy         = {}
-    vpc-cni            = {}
-  }
-
-  eks_managed_node_groups = {
-    default = {
-      instance_types = ["t4g.medium"]
-      ami_type       = "AL2_ARM_64"
-
-      min_size     = 1
-      max_size     = 5
-      desired_size = 1
-
-      iam_role_additional_policies = {
-        ecr_read = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-      }
-
-      # Required so Cluster Autoscaler can discover this node group
-      tags = {
-        "k8s.io/cluster-autoscaler/enabled"                     = "true"
-        "k8s.io/cluster-autoscaler/${var.cluster_name}"         = "owned"
-      }
-    }
-  }
-
-  tags = var.tags
-}
-
-# ── EKS OIDC provider ────────────────────────────────────────────────────────
 
 data "tls_certificate" "eks" {
-  url = module.eks.cluster_oidc_issuer_url
+  url = local.oidc_issuer
 }
 
 resource "aws_iam_openid_connect_provider" "eks" {
-  url             = module.eks.cluster_oidc_issuer_url
+  url             = local.oidc_issuer
   client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = [data.tls_certificate.eks.certificates[0].sha1_fingerprint]
+  tags            = var.tags
+}
+
+# ── Networking ────────────────────────────────────────────────────────────────
+# The console-created cluster only has private subnets with no internet route.
+# Nodes need outbound internet to pull ECR images and reach AWS APIs.
+# We add: IGW (imported from existing) + public subnets + NAT + route tables.
+
+resource "aws_internet_gateway" "this" {
+  vpc_id = data.aws_vpc.platform.id
+  tags   = var.tags
+}
+
+resource "aws_subnet" "public" {
+  for_each = {
+    "eu-west-2a" = "10.0.201.0/24"
+    "eu-west-2b" = "10.0.202.0/24"
+  }
+
+  vpc_id                  = data.aws_vpc.platform.id
+  cidr_block              = each.value
+  availability_zone       = each.key
+  map_public_ip_on_launch = true
+  tags                    = merge(var.tags, { Name = "${var.project_name}-public-${each.key}" })
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = data.aws_vpc.platform.id
+  tags   = var.tags
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.this.id
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  for_each       = aws_subnet.public
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_eip" "nat" {
+  domain     = "vpc"
+  depends_on = [aws_internet_gateway.this]
+  tags       = var.tags
+}
+
+resource "aws_nat_gateway" "this" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public["eu-west-2a"].id
+  tags          = var.tags
+  depends_on    = [aws_internet_gateway.this]
+}
+
+resource "aws_route_table" "private" {
+  vpc_id = data.aws_vpc.platform.id
+  tags   = var.tags
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.this.id
+  }
+}
+
+resource "aws_route_table_association" "private" {
+  for_each       = toset(data.aws_subnets.private.ids)
+  subnet_id      = each.value
+  route_table_id = aws_route_table.private.id
+}
+
+# ── EKS Addons ────────────────────────────────────────────────────────────────
+# vpc-cni and kube-proxy can install before nodes are ready.
+# coredns, ebs-csi, metrics-server, and node-monitoring-agent schedule pods
+# and must wait for the node group.
+
+resource "aws_eks_addon" "vpc_cni" {
+  cluster_name                = data.aws_eks_cluster.platform.name
+  addon_name                  = "vpc-cni"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  tags                        = var.tags
+}
+
+resource "aws_eks_addon" "kube_proxy" {
+  cluster_name                = data.aws_eks_cluster.platform.name
+  addon_name                  = "kube-proxy"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  tags                        = var.tags
+}
+
+resource "aws_eks_addon" "coredns" {
+  cluster_name                = data.aws_eks_cluster.platform.name
+  addon_name                  = "coredns"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  tags                        = var.tags
+  depends_on                  = [aws_eks_node_group.default]
+}
+
+resource "aws_eks_addon" "ebs_csi" {
+  cluster_name                = data.aws_eks_cluster.platform.name
+  addon_name                  = "aws-ebs-csi-driver"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  tags                        = var.tags
+  depends_on                  = [aws_eks_node_group.default]
+}
+
+resource "aws_eks_addon" "metrics_server" {
+  cluster_name                = data.aws_eks_cluster.platform.name
+  addon_name                  = "metrics-server"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  tags                        = var.tags
+  depends_on                  = [aws_eks_node_group.default]
+}
+
+resource "aws_eks_addon" "pod_identity_agent" {
+  cluster_name                = data.aws_eks_cluster.platform.name
+  addon_name                  = "eks-pod-identity-agent"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  tags                        = var.tags
+}
+
+resource "aws_eks_addon" "node_monitoring_agent" {
+  cluster_name                = data.aws_eks_cluster.platform.name
+  addon_name                  = "eks-node-monitoring-agent"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  tags                        = var.tags
+  depends_on                  = [aws_eks_node_group.default]
+}
+
+# ── EKS Node Group ────────────────────────────────────────────────────────────
+
+resource "aws_iam_role" "node_group" {
+  name = "${var.project_name}-node-group-role"
+  tags = var.tags
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "node_worker" {
+  role       = aws_iam_role.node_group.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "node_cni" {
+  role       = aws_iam_role.node_group.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+}
+
+resource "aws_iam_role_policy_attachment" "node_ecr" {
+  role       = aws_iam_role.node_group.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
+# Modern replacement for aws-auth ConfigMap — grants cluster access via EKS API.
+resource "aws_eks_access_entry" "node_group" {
+  cluster_name  = data.aws_eks_cluster.platform.name
+  principal_arn = aws_iam_role.node_group.arn
+  type          = "EC2_LINUX"
+}
+
+resource "aws_eks_node_group" "default" {
+  cluster_name    = data.aws_eks_cluster.platform.name
+  node_group_name = "default"
+  node_role_arn   = aws_iam_role.node_group.arn
+
+  subnet_ids = data.aws_subnets.private.ids
+
+  ami_type       = "AL2023_ARM_64_STANDARD"
+  instance_types = ["t4g.medium"]
+  capacity_type  = "ON_DEMAND"
+
+  scaling_config {
+    min_size     = 1
+    max_size     = 5
+    desired_size = 1
+  }
+
+  update_config {
+    max_unavailable = 1
+  }
+
+  tags = merge(var.tags, {
+    "k8s.io/cluster-autoscaler/enabled"               = "true"
+    "k8s.io/cluster-autoscaler/${var.cluster_name}"   = "owned"
+  })
+
+  depends_on = [
+    aws_iam_role_policy_attachment.node_worker,
+    aws_iam_role_policy_attachment.node_cni,
+    aws_iam_role_policy_attachment.node_ecr,
+    aws_route_table_association.private,
+  ]
+
+  lifecycle {
+    ignore_changes = [scaling_config[0].desired_size]
+  }
 }
 
 # ── ECR ──────────────────────────────────────────────────────────────────────
@@ -110,18 +267,18 @@ resource "aws_ecr_repository" "frontend" {
 
 resource "aws_security_group" "rds" {
   name        = "${var.project_name}-rds-sg"
-  description = "Allow PostgreSQL from EKS nodes"
-  vpc_id      = module.vpc.vpc_id
+  description = "Allow PostgreSQL from within the platform VPC"
+  vpc_id      = data.aws_vpc.platform.id
   tags        = var.tags
 }
 
-resource "aws_security_group_rule" "rds_from_eks" {
-  type                     = "ingress"
-  from_port                = 5432
-  to_port                  = 5432
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.rds.id
-  source_security_group_id = module.eks.node_security_group_id
+resource "aws_security_group_rule" "rds_from_vpc" {
+  type              = "ingress"
+  from_port         = 5432
+  to_port           = 5432
+  protocol          = "tcp"
+  security_group_id = aws_security_group.rds.id
+  cidr_blocks       = [data.aws_vpc.platform.cidr_block]
 }
 
 resource "aws_security_group_rule" "rds_egress" {
@@ -135,29 +292,28 @@ resource "aws_security_group_rule" "rds_egress" {
 
 resource "aws_db_subnet_group" "this" {
   name       = "${var.project_name}-db-subnets"
-  subnet_ids = module.vpc.private_subnets
+  subnet_ids = data.aws_subnets.private.ids
   tags       = var.tags
 }
 
 resource "aws_db_instance" "postgres" {
-  identifier                   = "${var.project_name}-postgres"
-  engine                       = "postgres"
-  engine_version               = "16.12"
-  instance_class               = "db.t4g.micro"
-  allocated_storage            = 20
-  storage_type                 = "gp3"
-  max_allocated_storage        = 30
-  db_name                      = var.db_name
-  username                     = var.db_username
-  password                     = var.db_password
-  db_subnet_group_name         = aws_db_subnet_group.this.name
-  vpc_security_group_ids       = [aws_security_group.rds.id]
-  publicly_accessible          = false
-  storage_encrypted            = true
-  backup_retention_period      = var.enable_rds_backups ? 1 : 0
-  skip_final_snapshot          = true
-  deletion_protection          = false
-  multi_az                     = false
-  performance_insights_enabled = false
-  tags                         = var.tags
+  identifier             = "${var.project_name}-postgres"
+  engine                 = "postgres"
+  engine_version         = "16"
+  instance_class         = "db.t4g.micro"
+  allocated_storage      = 20
+  storage_type           = "gp3"
+  max_allocated_storage  = 30
+  db_name                = var.db_name
+  username               = var.db_username
+  password               = var.db_password
+  db_subnet_group_name   = aws_db_subnet_group.this.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+  publicly_accessible    = false
+  storage_encrypted      = true
+  backup_retention_period = var.enable_rds_backups ? 1 : 0
+  skip_final_snapshot    = true
+  deletion_protection    = false
+  multi_az               = false
+  tags                   = var.tags
 }

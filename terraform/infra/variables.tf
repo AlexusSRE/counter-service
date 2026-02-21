@@ -8,6 +8,7 @@ variable "project_name" {
   default = "alex-counter-service"
 }
 
+# Created manually via the AWS console — SCP blocks eks:CreateCluster in this OU.
 variable "cluster_name" {
   type    = string
   default = "alex-counter-service"

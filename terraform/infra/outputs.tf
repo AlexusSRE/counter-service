@@ -2,20 +2,16 @@ output "region" {
   value = var.region
 }
 
-output "vpc_id" {
-  value = module.vpc.vpc_id
-}
-
 output "cluster_name" {
-  value = module.eks.cluster_name
+  value = data.aws_eks_cluster.platform.name
 }
 
 output "cluster_endpoint" {
-  value = module.eks.cluster_endpoint
+  value = data.aws_eks_cluster.platform.endpoint
 }
 
 output "cluster_certificate_authority_data" {
-  value     = module.eks.cluster_certificate_authority_data
+  value     = data.aws_eks_cluster.platform.certificate_authority[0].data
   sensitive = true
 }
 
@@ -24,11 +20,15 @@ output "oidc_provider_arn" {
 }
 
 output "oidc_issuer" {
-  value = module.eks.cluster_oidc_issuer_url
+  value = local.oidc_issuer
 }
 
-output "node_security_group_id" {
-  value = module.eks.node_security_group_id
+output "vpc_id" {
+  value = data.aws_vpc.platform.id
+}
+
+output "node_group_role_arn" {
+  value = aws_iam_role.node_group.arn
 }
 
 output "backend_ecr_url" {
@@ -40,6 +40,5 @@ output "frontend_ecr_url" {
 }
 
 output "rds_endpoint" {
-  value     = aws_db_instance.postgres.address
-  sensitive = false
+  value = aws_db_instance.postgres.address
 }

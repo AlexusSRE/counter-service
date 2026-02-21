@@ -15,12 +15,11 @@ permissions:
 env:
   AWS_REGION: eu-west-2
   TF_ROLE: arn:aws:iam::630943284793:role/alex-counter-service-terraform-ci
-  CLUSTER_NAME: alex-counter-service-cluster
+  CLUSTER_NAME: alex-counter-service
   ARGOCD_NAMESPACE: argocd
   APP_NAMESPACE: prod
 
 jobs:
-  # ── Stage 1: Infra (VPC, EKS, ECR, RDS) ────────────────────────────────────
   infra:
     name: "Terraform Infra"
     runs-on: ubuntu-latest
@@ -41,12 +40,64 @@ jobs:
         working-directory: terraform/infra
         run: terraform init
 
-      - name: Terraform Destroy (infra) — only when requested
+      - name: Terraform Destroy (infra)
         if: github.event.inputs.destroy == 'destroy'
         working-directory: terraform/infra
         run: terraform destroy -auto-approve
         env:
           TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+
+      - name: Import existing resources (idempotent)
+        working-directory: terraform/infra
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+        run: |
+          terraform import aws_ecr_repository.backend  counter-backend  2>/dev/null || true
+          terraform import aws_ecr_repository.frontend counter-frontend 2>/dev/null || true
+
+          IGW_ID=$(aws ec2 describe-internet-gateways \
+            --filters "Name=attachment.vpc-id,Values=$(aws eks describe-cluster \
+              --name ${{ env.CLUSTER_NAME }} \
+              --query 'cluster.resourcesVpcConfig.vpcId' --output text)" \
+            --query "InternetGateways[0].InternetGatewayId" --output text 2>/dev/null)
+          if [ -n "$IGW_ID" ] && [ "$IGW_ID" != "None" ]; then
+            terraform import aws_internet_gateway.this "$IGW_ID" 2>/dev/null || true
+          fi
+
+          OIDC_ISSUER=$(aws eks describe-cluster \
+            --name ${{ env.CLUSTER_NAME }} \
+            --query "cluster.identity.oidc.issuer" \
+            --output text 2>/dev/null)
+          if [ -n "$OIDC_ISSUER" ]; then
+            OIDC_ARN=$(aws iam list-open-id-connect-providers \
+              --query "OpenIDConnectProviderList[?ends_with(Arn,'${OIDC_ISSUER##*/}')].Arn" \
+              --output text 2>/dev/null)
+            if [ -n "$OIDC_ARN" ]; then
+              terraform import aws_iam_openid_connect_provider.eks "$OIDC_ARN" 2>/dev/null || true
+            fi
+          fi
+
+          terraform import "aws_eks_addon.coredns"              "${{ env.CLUSTER_NAME }}:coredns"                  2>/dev/null || true
+          terraform import "aws_eks_addon.kube_proxy"           "${{ env.CLUSTER_NAME }}:kube-proxy"               2>/dev/null || true
+          terraform import "aws_eks_addon.vpc_cni"              "${{ env.CLUSTER_NAME }}:vpc-cni"                  2>/dev/null || true
+          terraform import "aws_eks_addon.ebs_csi"              "${{ env.CLUSTER_NAME }}:aws-ebs-csi-driver"       2>/dev/null || true
+          terraform import "aws_eks_addon.metrics_server"       "${{ env.CLUSTER_NAME }}:metrics-server"           2>/dev/null || true
+          terraform import "aws_eks_addon.pod_identity_agent"   "${{ env.CLUSTER_NAME }}:eks-pod-identity-agent"  2>/dev/null || true
+          terraform import "aws_eks_addon.node_monitoring_agent" "${{ env.CLUSTER_NAME }}:eks-node-monitoring-agent" 2>/dev/null || true
+
+          terraform import aws_iam_role.node_group \
+            "${{ env.CLUSTER_NAME }}-node-group-role" 2>/dev/null || true
+
+          terraform import aws_eks_node_group.default \
+            "${{ env.CLUSTER_NAME }}:default" 2>/dev/null || true
+
+          NODE_ROLE_ARN=$(aws iam get-role \
+            --role-name "${{ env.CLUSTER_NAME }}-node-group-role" \
+            --query "Role.Arn" --output text 2>/dev/null)
+          if [ -n "$NODE_ROLE_ARN" ]; then
+            terraform import aws_eks_access_entry.node_group \
+              "${{ env.CLUSTER_NAME }}:${NODE_ROLE_ARN}" 2>/dev/null || true
+          fi
 
       - name: Terraform Apply (infra)
         working-directory: terraform/infra
@@ -54,15 +105,6 @@ jobs:
         env:
           TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
 
-      - name: Export infra outputs
-        working-directory: terraform/infra
-        run: |
-          echo "CLUSTER_ENDPOINT=$(terraform output -raw cluster_endpoint)" >> $GITHUB_ENV
-          echo "RDS_ENDPOINT=$(terraform output -raw rds_endpoint)"         >> $GITHUB_ENV
-          echo "BACKEND_ECR=$(terraform output -raw backend_ecr_url)"       >> $GITHUB_ENV
-          echo "FRONTEND_ECR=$(terraform output -raw frontend_ecr_url)"     >> $GITHUB_ENV
-
-  # ── Stage 2: App layer (IAM, ALB controller, CloudFront) ────────────────────
   app-terraform:
     name: "Terraform App"
     runs-on: ubuntu-latest
@@ -84,11 +126,22 @@ jobs:
         working-directory: terraform/app
         run: terraform init
 
+      - name: Import existing IAM resources (idempotent)
+        working-directory: terraform/app
+        run: |
+          GITHUB_OIDC_ARN=$(aws iam list-open-id-connect-providers \
+            --query "OpenIDConnectProviderList[?ends_with(Arn,'token.actions.githubusercontent.com')].Arn" \
+            --output text 2>/dev/null)
+          if [ -n "$GITHUB_OIDC_ARN" ]; then
+            terraform import aws_iam_openid_connect_provider.github "$GITHUB_OIDC_ARN" 2>/dev/null || true
+          fi
+          terraform import aws_iam_role.terraform_ci  alex-counter-service-terraform-ci        2>/dev/null || true
+          terraform import aws_iam_role.github_actions alex-counter-service-github-actions-role 2>/dev/null || true
+
       - name: Terraform Apply (app)
         working-directory: terraform/app
         run: terraform apply -auto-approve
 
-  # ── Stage 3: Install Argo CD ─────────────────────────────────────────────────
   argocd-install:
     name: "Install Argo CD"
     runs-on: ubuntu-latest
@@ -124,7 +177,7 @@ jobs:
         run: |
           kubectl rollout status deployment/argocd-server \
             -n ${{ env.ARGOCD_NAMESPACE }} \
-            --timeout=180s
+            --timeout=300s
 
       - name: Ensure default AppProject exists
         run: |
@@ -145,7 +198,6 @@ jobs:
                 kind: "*"
           EOF
 
-  # ── Stage 4: Seed Kubernetes secrets + deploy via Argo CD ───────────────────
   deploy:
     name: "Deploy App"
     runs-on: ubuntu-latest
@@ -168,13 +220,15 @@ jobs:
             --region ${{ env.AWS_REGION }} \
             --name   ${{ env.CLUSTER_NAME }}
 
-      - name: Read RDS endpoint from Terraform state
+      - name: Read Terraform outputs
+        working-directory: terraform/infra
         run: |
-          cd terraform/infra
           terraform init -input=false
-          echo "RDS_ENDPOINT=$(terraform output -raw rds_endpoint)" >> $GITHUB_ENV
-          echo "BACKEND_ECR=$(terraform output -raw backend_ecr_url)"  >> $GITHUB_ENV
+          echo "RDS_ENDPOINT=$(terraform output -raw rds_endpoint)"     >> $GITHUB_ENV
+          echo "BACKEND_ECR=$(terraform output -raw backend_ecr_url)"   >> $GITHUB_ENV
           echo "FRONTEND_ECR=$(terraform output -raw frontend_ecr_url)" >> $GITHUB_ENV
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
 
       - name: Create prod namespace
         run: kubectl create namespace ${{ env.APP_NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
@@ -204,20 +258,13 @@ jobs:
 
       - name: Trigger Argo CD sync
         run: |
-          kubectl -n ${{ env.ARGOCD_NAMESPACE }} wait \
-            --for=condition=available deployment/argocd-server \
-            --timeout=120s
-
-          # Get admin password
           ARGOCD_PASSWORD=$(kubectl -n ${{ env.ARGOCD_NAMESPACE }} get secret argocd-initial-admin-secret \
             -o jsonpath="{.data.password}" | base64 -d)
 
-          # Install argocd CLI
           curl -sSL -o /usr/local/bin/argocd \
             https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
           chmod +x /usr/local/bin/argocd
 
-          # Port-forward in background for CLI login
           kubectl port-forward svc/argocd-server -n ${{ env.ARGOCD_NAMESPACE }} 8080:443 &
           sleep 5
 
@@ -239,4 +286,4 @@ jobs:
           echo "| Backend ECR | ${{ env.BACKEND_ECR }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Frontend ECR | ${{ env.FRONTEND_ECR }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Argo CD UI: run \`kubectl port-forward svc/argocd-server -n argocd 8080:443\`" >> $GITHUB_STEP_SUMMARY
+          echo "Argo CD UI: \`kubectl port-forward svc/argocd-server -n argocd 8080:443\`" >> $GITHUB_STEP_SUMMARY
