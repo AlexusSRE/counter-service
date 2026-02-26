@@ -1,0 +1,53 @@
+# Vintage Story dedicated server — simple home server setup
+# Uses bind mounts under ./data so files are visible on the host.
+#
+# On ARM (Raspberry Pi, etc.): the official server is x64-only. We run it via
+# platform: linux/amd64 (QEMU emulation). For native ARM, use docker-compose
+# with Dockerfile.arm64 — see README "Running on ARM (Raspberry Pi)".
+
+services:
+  vintagestory:
+    build:
+      context: .
+      dockerfile: ${VS_DOCKERFILE:-Dockerfile}
+      args:
+        # Dockerfile.arm64 also uses VS_VERSION and VS_VERSION_TYPE (stable/unstable)
+        VS_VERSION: ${VS_VERSION:-1.21.6}
+        VS_VERSION_TYPE: ${VS_VERSION_TYPE:-stable}
+    image: vintagestory-server:local
+    container_name: vintagestory-server
+    restart: unless-stopped
+    # On ARM: default runs x64 image under emulation. For native ARM64 (Dockerfile.arm64) set VS_PLATFORM=linux/arm64
+    platform: ${VS_PLATFORM:-linux/amd64}
+
+    # Memory cap: 1.4 GB (use mem_limit for plain docker compose; deploy.resources only apply in Swarm)
+    mem_limit: 1400m
+
+    environment:
+      TZ: ${TZ:-UTC}
+      # Server config (used to generate serverconfig.json on first run)
+      VS_SERVER_NAME: ${VS_SERVER_NAME:-Vintage Story Server}
+      VS_PASSWORD: ${VS_PASSWORD:-}
+      VS_MAX_PLAYERS: ${VS_MAX_PLAYERS:-8}
+      VS_PUBLIC: ${VS_PUBLIC:-false}
+      VS_ADVERTISE: ${VS_ADVERTISE:-false}
+      VS_WELCOME_MESSAGE: ${VS_WELCOME_MESSAGE:-Welcome!}
+      ADMIN_USER: ${ADMIN_USER:-}
+      ENABLE_SSH: ${ENABLE_SSH:-false}
+
+    ports:
+      - "42420:42420/tcp"
+      - "42420:42420/udp"
+      # SSH only when ENABLE_SSH=true; use key-based auth and firewall in production
+      - "42421:22/tcp"
+
+    volumes:
+      # x64 / default: /home/vintagestory/data. ARM64 (official repo): set VS_DATA_MOUNT=/home/vintagestory/.config/VintagestoryData
+      - ./data:${VS_DATA_MOUNT:-/home/vintagestory/data}
+
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "42420"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
